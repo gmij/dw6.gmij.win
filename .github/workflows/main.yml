@@ -1,0 +1,74 @@
+name: Build Json
+on:
+  schedule:
+    - cron: '0 */1 * * *' # every 4 hours
+  workflow_dispatch:
+concurrency: 
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true  
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    
+    - uses: actions/checkout@v4
+      with: 
+        path: wallpaper
+        
+    - uses: actions/checkout@v4
+      with:
+        repository: gmij/wallpaper.robot
+        token: ${{ secrets.PAT }}
+        path: downloader
+        sparse-checkout: publish
+        
+    - name: GC
+      run: |
+        cd  wallpaper
+        git reflog expire --expire=now --all
+        git gc --prune=now
+        git push --all --force
+        cd ..
+        
+
+    - name: remove old file
+      run: |
+        rm -rf wallpaper/wallpaper
+        rm -rf wallpaper/preview
+        
+    - name: Download Wallpaper
+      run: |
+        cd downloader/publish
+        chmod +x ./Pic.Downloader
+        ./Pic.Downloader self
+
+    - name: Copy Wallpaper
+      run: |
+        pwd
+        cp -r downloader/publish/wallpaper/wallpaper wallpaper
+
+    - name: Build Index
+      run: |
+        cd downloader/publish
+        chmod +x ./BuildIndexJson
+        ./BuildIndexJson
+
+    - name: Append timestamp
+      run: |
+        cd wallpaper
+        TIMESTAMP=$(date +%s)
+        sed -i "s|\"preview/index.json?t=[0-9]*\"|\"preview/index.json\"|g" index.html
+        sed -i "s|\"preview/index.json\"|\"preview/index.json?t=$TIMESTAMP\"|g" index.html        
+
+
+    - name: Commit Changes
+      run: |
+        cd wallpaper
+        git config --local user.email "gmij@qq.com"
+        git config --local user.name "Gmij with Github Actions"
+        git checkout --orphan latest
+        git add .
+        git commit -am "update...."
+        git branch -D main
+        git branch -m main
+        git push -f origin main
